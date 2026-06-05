@@ -243,7 +243,7 @@
 | 1 | 1.1 | ✅ | - | Perceptor |
 | 1 | 1.2 | ✅ | - | Inductor v1 |
 | 1 | 1.3 | ✅ | - | Validación |
-| 2 | 2.1 | ⬜ | - | Estado Unificado |
+| 2 | 2.1 | ✅ | - | Estado Unificado |
 | 2 | 2.2 | ⬜ | - | A* Básico |
 | 2 | 2.3 | ⬜ | - | Pattern DB |
 | 2 | 2.4 | ⬜ | - | Restricciones |
