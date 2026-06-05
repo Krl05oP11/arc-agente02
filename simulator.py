@@ -266,45 +266,20 @@ setInterval(updateFrame, 500);
 </html>
 """
 
-def render_grid(grid_array, player_offset=(0, 0)):
-    """Render grid as PNG base64, with player at offset position"""
+def render_grid(grid_array):
+    """Render grid as PNG base64"""
     if grid_array is None:
-        # Return blank image
         img = Image.new("RGB", (512, 512), color=(50, 50, 50))
     else:
         H, W = len(grid_array), len(grid_array[0])
         img = Image.new("RGB", (W * SCALE, H * SCALE))
         pixels = img.load()
 
-        # Find original player position
-        player_pos = None
-        for r in range(H):
-            for c in range(W):
-                if grid_array[r][c] == 12:
-                    player_pos = (r, c)
-                    break
-            if player_pos:
-                break
-
         for r in range(H):
             for c in range(W):
                 try:
                     val = int(grid_array[r][c])
-
-                    # If this is player cell, move it by offset
-                    if val == 12 and player_pos:
-                        dr, dc = player_offset
-                        new_r = player_pos[0] + dr
-                        new_c = player_pos[1] + dc
-
-                        # Only render player if at new position
-                        if (r, c) == (new_r, new_c):
-                            rgb = COLOR_MAP.get(12, (255, 133, 27))  # Orange
-                        else:
-                            # Render as floor instead of player
-                            rgb = COLOR_MAP.get(3, (102, 102, 102))
-                    else:
-                        rgb = COLOR_MAP.get(val, (0, 0, 0))
+                    rgb = COLOR_MAP.get(val, (0, 0, 0))
                 except:
                     rgb = (100, 100, 100)
 
@@ -325,8 +300,7 @@ def index():
 @app.route("/api/frame")
 def api_frame():
     with lock:
-        player_offset = game_state.get("player_offset", (0, 0))
-        img_b64 = render_grid(game_state.get("game_grid"), player_offset)
+        img_b64 = render_grid(game_state.get("game_grid"))
 
         return jsonify({
             "image": img_b64,
@@ -341,130 +315,78 @@ def api_frame():
 @app.route("/api/step", methods=["POST"])
 def api_step():
     with lock:
-        if game_state.get("game_grid") is None:
-            # Initialize from ARC Prize or test grid
-            if game_state.get("arc_ready") and game_state["env"]:
-                try:
-                    frame = game_state["env"].reset()
-                    if frame and hasattr(frame, 'frame'):
-                        game_state["game_grid"] = np.array(frame.frame[0], dtype=np.int8)
-                except:
-                    game_state["game_grid"] = np.zeros((64, 64), dtype=np.int8)
+        if game_state.get("game_grid") is None or game_state.get("env") is None:
+            return jsonify({"ok": False, "error": "No game loaded"})
+
+        try:
+            # Get current grid and environment
+            grid = game_state["game_grid"]
+            env = game_state["env"]
+
+            # Get player position
+            player_positions = np.where(grid == 12)
+            if len(player_positions[0]) > 0:
+                player_row = int(np.mean(player_positions[0]))
+                player_col = int(np.mean(player_positions[1]))
             else:
-                game_state["game_grid"] = np.zeros((64, 64), dtype=np.int8)
-            game_state["using_agent"] = HAS_AGENT
-        else:
-            # Execute agent step
+                player_row, player_col = 32, 32
+
+            # Find target (first door or center)
+            doors = list(GridAdapter.get_doors(grid))
+            if doors:
+                target = doors[0]
+            else:
+                target = (32, 32)
+
+            # Calculate direction
+            dr = target[0] - player_row
+            dc = target[1] - player_col
+
+            # Determine action
+            action_name = None
+            if abs(dr) > abs(dc):
+                action_name = "ACTION2" if dr > 0 else "ACTION1"  # Down/Up
+            else:
+                action_name = "ACTION4" if dc > 0 else "ACTION3"  # Right/Left
+
+            # Execute action in ARC Prize
             try:
-                if HAS_AGENT and supervisor:
-                    # Get current grid
-                    grid = game_state["game_grid"]
+                from arcengine import GameAction
+                action = GameAction.from_name(action_name)
+                frame = env.step(action)
 
-                    # Get player position from grid (color 12 = orange)
-                    player_positions = np.where(grid == 12)
-                    if len(player_positions[0]) > 0:
-                        player_row = int(np.mean(player_positions[0]))
-                        player_col = int(np.mean(player_positions[1]))
+                if frame is not None:
+                    # Update grid with actual result
+                    game_state["game_grid"] = np.array(frame.frame[0], dtype=np.int8)
+                    game_state["player_offset"] = (0, 0)  # Reset offset
+
+                    # Check game state
+                    if hasattr(frame, 'state'):
+                        state_str = str(frame.state).upper()
+                        if "OVER" in state_str or "WIN" in state_str:
+                            game_state["history"].append(f"[{game_state['step_count']}] 🎉 LEVEL COMPLETE!")
+                            game_state["status"] = "Level Complete!"
+                        else:
+                            action_labels = {"ACTION1": "Up", "ACTION2": "Down", "ACTION3": "Left", "ACTION4": "Right"}
+                            game_state["history"].append(f"[{game_state['step_count']}] ✅ {action_labels.get(action_name, action_name)}")
+                            game_state["status"] = "Moving..."
                     else:
-                        player_row, player_col = 32, 32
-
-                    # Get objectives from grid
-                    doors = list(GridAdapter.get_doors(grid))
-
-                    # If no doors, try to find unreachable areas
-                    if not doors:
-                        # Find first non-wall cell that's not player
-                        for r in range(64):
-                            for c in range(64):
-                                if grid[r, c] not in [4, 5, 12] and (r, c) != (player_row, player_col):
-                                    doors = [(r, c)]
-                                    break
-                            if doors:
-                                break
-
-                    # Create solution path targeting first door
-                    solution_path = [(player_row, player_col)]
-                    if doors:
-                        solution_path.append(doors[0])
-
-                    # Create example for supervisor
-                    world = WorldState(
-                        player_pos=(player_row, player_col),
-                        walls=GridAdapter.get_walls(grid),
-                        doors=[],  # Don't report doors as obstacles
-                        rotators=[],
-                        refills=[],
-                        teleporters=[],
-                        key_state=KeyState(0, 0, 0),
-                        energy=42
-                    )
-
-                    example = Example(
-                        input_grid=grid,
-                        solution_path=solution_path,
-                        world_state=world
-                    )
-
-                    # Try supervisor first
-                    result = supervisor.run([example], grid, test_world=world)
-
-                    if result.success and result.plan:
-                        action_str = f"Plan: {len(result.plan.actions)} steps"
-                        game_state["history"].append(f"[{game_state['step_count']}] ✅ {action_str}")
-                        game_state["status"] = f"Plan generated: {len(result.plan.actions)} steps"
-                    else:
-                        # Fallback: Simple exploration towards nearest door
-                        if doors:
-                            target = doors[0]
-                        else:
-                            # If no doors, move towards center
-                            target = (32, 32)
-
-                        # Calculate direction
-                        dr = target[0] - player_row
-                        dc = target[1] - player_col
-
-                        # Determine movement
-                        action = None
-                        offset_row, offset_col = game_state.get("player_offset", (0, 0))
-                        new_row = player_row + offset_row
-                        new_col = player_col + offset_col
-
-                        if abs(dr) > abs(dc):
-                            action = "Down" if dr > 0 else "Up"
-                            move_amount = 1 if dr > 0 else -1
-                            new_row += move_amount
-                        else:
-                            action = "Right" if dc > 0 else "Left"
-                            move_amount = 1 if dc > 0 else -1
-                            new_col += move_amount
-
-                        # Check if new position is valid (not a wall)
-                        if 0 <= new_row < 64 and 0 <= new_col < 64:
-                            if grid[new_row, new_col] not in [4, 5]:  # Not a wall
-                                # Update player offset (virtual movement)
-                                game_state["player_offset"] = (new_row - player_row, new_col - player_col)
-
-                                game_state["history"].append(f"[{game_state['step_count']}] ✅ {action} ({new_row},{new_col})")
-                                game_state["status"] = f"Moved {action}"
-                            else:
-                                # Hit a wall, try different direction
-                                game_state["history"].append(f"[{game_state['step_count']}] 🧱 Wall! Cannot {action}")
-                                game_state["status"] = "Blocked by wall"
-                        else:
-                            game_state["history"].append(f"[{game_state['step_count']}] ⚠️ Out of bounds")
-                            game_state["status"] = "Out of bounds"
+                        action_labels = {"ACTION1": "Up", "ACTION2": "Down", "ACTION3": "Left", "ACTION4": "Right"}
+                        game_state["history"].append(f"[{game_state['step_count']}] ✅ {action_labels.get(action_name, action_name)}")
+                        game_state["status"] = "Moving..."
                 else:
-                    # No agent available
-                    game_state["history"].append(f"[{game_state['step_count']}] ℹ️ Agent not available")
-                    game_state["status"] = "Agent not available"
-
-                game_state["step_count"] += 1
-
+                    game_state["history"].append(f"[{game_state['step_count']}] ⚠️ No frame returned")
+                    game_state["status"] = "Error: No frame"
             except Exception as e:
-                game_state["history"].append(f"[{game_state['step_count']}] ❌ Error: {str(e)[:40]}")
-                game_state["step_count"] += 1
-                game_state["status"] = f"Error: {str(e)[:30]}"
+                game_state["history"].append(f"[{game_state['step_count']}] ⚠️ Action failed")
+                game_state["status"] = "Action execution error"
+
+            game_state["step_count"] += 1
+
+        except Exception as e:
+            game_state["history"].append(f"[{game_state['step_count']}] ❌ Error: {str(e)[:40]}")
+            game_state["step_count"] += 1
+            game_state["status"] = f"Error"
 
         return jsonify({"ok": True})
 
