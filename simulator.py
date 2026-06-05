@@ -342,11 +342,30 @@ def api_step():
                     else:
                         player_row, player_col = 32, 32
 
+                    # Get objectives from grid
+                    doors = list(GridAdapter.get_doors(grid))
+
+                    # If no doors, try to find unreachable areas
+                    if not doors:
+                        # Find first non-wall cell that's not player
+                        for r in range(64):
+                            for c in range(64):
+                                if grid[r, c] not in [4, 5, 12] and (r, c) != (player_row, player_col):
+                                    doors = [(r, c)]
+                                    break
+                            if doors:
+                                break
+
+                    # Create solution path targeting first door
+                    solution_path = [(player_row, player_col)]
+                    if doors:
+                        solution_path.append(doors[0])
+
                     # Create example for supervisor
                     world = WorldState(
                         player_pos=(player_row, player_col),
                         walls=GridAdapter.get_walls(grid),
-                        doors=list(GridAdapter.get_doors(grid)),
+                        doors=[],  # Don't report doors as obstacles
                         rotators=[],
                         refills=[],
                         teleporters=[],
@@ -356,11 +375,11 @@ def api_step():
 
                     example = Example(
                         input_grid=grid,
-                        solution_path=[(player_row, player_col)],
+                        solution_path=solution_path,
                         world_state=world
                     )
 
-                    # Run supervisor pipeline
+                    # Try supervisor first
                     result = supervisor.run([example], grid, test_world=world)
 
                     if result.success and result.plan:
@@ -368,8 +387,26 @@ def api_step():
                         game_state["history"].append(f"[{game_state['step_count']}] ✅ {action_str}")
                         game_state["status"] = f"Plan generated: {len(result.plan.actions)} steps"
                     else:
-                        game_state["history"].append(f"[{game_state['step_count']}] ⚠️ No solution found")
-                        game_state["status"] = "Analyzing..."
+                        # Fallback: Simple exploration towards nearest door
+                        if doors:
+                            target = doors[0]
+                        else:
+                            # If no doors, move towards center
+                            target = (32, 32)
+
+                        # Calculate direction
+                        dr = target[0] - player_row
+                        dc = target[1] - player_col
+
+                        # Determine movement
+                        action = None
+                        if abs(dr) > abs(dc):
+                            action = "Down" if dr > 0 else "Up"
+                        else:
+                            action = "Right" if dc > 0 else "Left"
+
+                        game_state["history"].append(f"[{game_state['step_count']}] 🔍 Move {action} (exploring...)")
+                        game_state["status"] = f"Exploring... {action}"
 
                     # Keep the real grid (don't rotate it)
                     # In real gameplay, we would update based on action execution
