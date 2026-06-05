@@ -245,7 +245,7 @@
 | 1 | 1.3 | ✅ | - | Validación |
 | 2 | 2.1 | ✅ | - | Estado Unificado |
 | 2 | 2.2 | ✅ | - | A* Básico |
-| 2 | 2.3 | ⬜ | - | Pattern DB |
+| 2 | 2.3 | ✅ | - | Pattern DB |
 | 2 | 2.4 | ⬜ | - | Restricciones |
 | 3 | 3.1 | ⬜ | - | Renderizador |
 | 3 | 3.2 | ⬜ | - | Supervisor |
