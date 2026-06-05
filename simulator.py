@@ -42,17 +42,37 @@ except Exception as e:
 
 app = Flask(__name__)
 
+# Initialize ARC Prize environment (async to avoid blocking server)
+arcade = None
+current_env = None
+
+def init_arc_async():
+    global arcade, current_env
+    if not HAS_ARC:
+        return
+    try:
+        arcade = Arcade(environments_dir="~/arc_env_files/ls20")
+        current_env = arcade.make("ls20")
+        print("✅ ARC Prize environment loaded (ls20)")
+    except Exception as e:
+        print(f"⚠️  ARC environment failed: {e}")
+
+# Start async load immediately
+arc_loader = threading.Thread(target=init_arc_async, daemon=True)
+arc_loader.start()
+
 # Global state
 lock = threading.Lock()
 game_state = {
     "frame": None,
-    "env": None,
+    "env": current_env,
     "current_level": 1,
     "step_count": 0,
     "game_grid": None,
     "history": [],
     "using_agent": False,
     "agent_ready": HAS_AGENT,
+    "arc_ready": HAS_ARC and current_env is not None,
 }
 
 # Color map (value → RGB)
@@ -296,8 +316,16 @@ def api_frame():
 def api_step():
     with lock:
         if game_state.get("game_grid") is None:
-            # Initialize with test grid
-            game_state["game_grid"] = np.random.randint(0, 16, (64, 64))
+            # Initialize from ARC Prize or test grid
+            if game_state.get("arc_ready") and game_state["env"]:
+                try:
+                    frame = game_state["env"].reset()
+                    if frame and hasattr(frame, 'frame'):
+                        game_state["game_grid"] = np.array(frame.frame[0], dtype=np.int8)
+                except:
+                    game_state["game_grid"] = np.zeros((64, 64), dtype=np.int8)
+            else:
+                game_state["game_grid"] = np.zeros((64, 64), dtype=np.int8)
             game_state["using_agent"] = HAS_AGENT
         else:
             # Execute agent step
@@ -306,11 +334,19 @@ def api_step():
                     # Get current grid
                     grid = game_state["game_grid"]
 
+                    # Get player position from grid (color 12 = orange)
+                    player_positions = np.where(grid == 12)
+                    if len(player_positions[0]) > 0:
+                        player_row = int(np.mean(player_positions[0]))
+                        player_col = int(np.mean(player_positions[1]))
+                    else:
+                        player_row, player_col = 32, 32
+
                     # Create example for supervisor
                     world = WorldState(
-                        player_pos=(32, 32),
-                        walls=set(),
-                        doors=[],
+                        player_pos=(player_row, player_col),
+                        walls=GridAdapter.get_walls(grid),
+                        doors=list(GridAdapter.get_doors(grid)),
                         rotators=[],
                         refills=[],
                         teleporters=[],
@@ -320,7 +356,7 @@ def api_step():
 
                     example = Example(
                         input_grid=grid,
-                        solution_path=[(32, 32)],
+                        solution_path=[(player_row, player_col)],
                         world_state=world
                     )
 
@@ -330,24 +366,24 @@ def api_step():
                     if result.success and result.plan:
                         action_str = f"Plan: {len(result.plan.actions)} steps"
                         game_state["history"].append(f"[{game_state['step_count']}] ✅ {action_str}")
+                        game_state["status"] = f"Plan generated: {len(result.plan.actions)} steps"
                     else:
                         game_state["history"].append(f"[{game_state['step_count']}] ⚠️ No solution found")
+                        game_state["status"] = "Analyzing..."
 
-                    # Simulate movement by rotating grid
-                    game_state["game_grid"] = np.rot90(game_state["game_grid"])
+                    # Keep the real grid (don't rotate it)
+                    # In real gameplay, we would update based on action execution
                 else:
-                    # Fallback to random movement
-                    actions = ["Move UP", "Move DOWN", "Move LEFT", "Move RIGHT"]
-                    action = actions[game_state["step_count"] % 4]
-                    game_state["history"].append(f"[{game_state['step_count']}] {action}")
-                    game_state["game_grid"] = np.random.randint(0, 16, (64, 64))
+                    # No agent available
+                    game_state["history"].append(f"[{game_state['step_count']}] ℹ️ Agent not available")
+                    game_state["status"] = "Agent not available"
 
                 game_state["step_count"] += 1
-                game_state["status"] = f"Step {game_state['step_count']}"
 
             except Exception as e:
                 game_state["history"].append(f"[{game_state['step_count']}] ❌ Error: {str(e)[:40]}")
                 game_state["step_count"] += 1
+                game_state["status"] = f"Error: {str(e)[:30]}"
 
         return jsonify({"ok": True})
 
@@ -355,12 +391,31 @@ def api_step():
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
     with lock:
-        # Create a new test grid
-        game_state["game_grid"] = np.random.randint(0, 16, (64, 64))
         game_state["step_count"] = 0
-        game_state["current_level"] = 1
-        game_state["status"] = "Ready"
         game_state["history"] = ["[0] Game Reset"]
+
+        # Load real ARC Prize environment
+        if game_state.get("arc_ready") and game_state["env"]:
+            try:
+                frame = game_state["env"].reset()
+                if frame and hasattr(frame, 'frame'):
+                    game_state["game_grid"] = np.array(frame.frame[0], dtype=np.int8)
+                    game_state["status"] = "Real ARC Prize Level Loaded"
+                    game_state["history"].append("[0] ✅ ARC Prize level loaded")
+                else:
+                    # Fallback to test grid
+                    game_state["game_grid"] = np.zeros((64, 64), dtype=np.int8)
+                    game_state["status"] = "Ready (Test Mode)"
+            except Exception as e:
+                game_state["game_grid"] = np.zeros((64, 64), dtype=np.int8)
+                game_state["status"] = f"Error: {str(e)[:30]}"
+                game_state["history"].append(f"[0] ❌ {str(e)[:40]}")
+        else:
+            # No ARC available - use test grid
+            game_state["game_grid"] = np.zeros((64, 64), dtype=np.int8)
+            game_state["status"] = "Ready (Test Mode - arc-agi not available)"
+
+        game_state["current_level"] = 1
 
         return jsonify({"ok": True})
 
@@ -370,11 +425,34 @@ if __name__ == "__main__":
     print("  🎮 ARC-AGENTE02 Visual Simulator")
     print("  Open http://localhost:5555 in your browser")
     print("=" * 60 + "\n")
+    print("  ⏳ Loading ARC Prize environment...")
 
-    # Initialize
+    # Initialize with test grid (will update when ARC loads)
     with lock:
         game_state["game_grid"] = np.zeros((64, 64), dtype=np.int8)
-        game_state["status"] = "Ready"
-        game_state["history"] = ["Simulator started"]
+        game_state["status"] = "Loading ARC Prize..."
+        game_state["history"] = ["Simulator started, loading environment..."]
 
+    # Wait briefly for ARC to load (max 5 seconds)
+    for attempt in range(50):
+        if current_env is not None:
+            try:
+                frame = current_env.reset()
+                if frame and hasattr(frame, 'frame'):
+                    with lock:
+                        game_state["env"] = current_env
+                        game_state["game_grid"] = np.array(frame.frame[0], dtype=np.int8)
+                        game_state["status"] = "Ready - Real ARC Prize Level"
+                        game_state["history"] = ["✅ ARC Prize level loaded"]
+                        game_state["arc_ready"] = True
+                    print("✅ Loaded real ARC Prize level!")
+                    break
+            except Exception as e:
+                pass
+        threading.Event().wait(0.1)  # Wait 100ms
+
+    if game_state["env"] is None:
+        print("⚠️  ARC Prize not loaded, using test mode")
+
+    print("🚀 Server starting on http://localhost:5555\n")
     app.run(host="127.0.0.1", port=5555, debug=False, threaded=True)
