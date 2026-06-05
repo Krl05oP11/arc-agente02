@@ -91,9 +91,9 @@ Nuestra solución: **Búsqueda en un espacio de reglas pequeño + validación en
 ### 2. Sistema de Juego
 
 #### 2.1 Grid Geometry
-- **Dimensión:** 30×30 celdas (filas × columnas)
+- **Dimensión:** 64×64 celdas (filas × columnas)
 - **Indexación:** (row, col) con (0,0) en esquina superior izquierda
-- **Coordenadas:** [0..29] × [0..29]
+- **Coordenadas:** [0..63] × [0..63]
 
 #### 2.2 Objetos Principales
 
@@ -191,7 +191,7 @@ Nuestra solución: **Búsqueda en un espacio de reglas pequeño + validación en
 ### 6 Módulos Principales
 
 #### 1. **Perceptor (Analizador)**
-- **Entrada:** Matriz 30×30 de colores/símbolos
+- **Entrada:** Matriz 64×64 de colores/símbolos
 - **Proceso:** Identificar entidades (player, walls, rotators, doors, etc.)
 - **Salida:** Estructura de datos (WorldState)
 - **Responsabilidad:** Abstracción de la percepción cruda
@@ -238,7 +238,7 @@ class Perceptor:
     
     def parse_grid(self, grid: np.ndarray) -> WorldState:
         """
-        Entrada: 30×30 numpy array de colores
+        Entrada: 64×64 numpy array de colores
         Salida: WorldState con entidades identificadas
         """
         pass
@@ -451,7 +451,7 @@ class Renderizador:
         pass
 ```
 
-**Salida esperada:** Grid 30×30 con camino dibujado
+**Salida esperada:** Grid 64×64 con camino dibujado
 
 ---
 
@@ -589,7 +589,7 @@ class Supervisor:
 ### FASE 5: Visibilidad Parcial (L7)
 
 **Hito 5.1: Memory & Exploration**
-- [ ] Mantener mapa explorado (30×30 grid)
+- [ ] Mantener mapa explorado (64×64 grid)
 - [ ] Frontier-based exploration: dirigirse a frontera más cercana
 - [ ] Update mapa cuando nuevas celdas se ven
 - [ ] Unit tests: explorador llega a fronteras correctas
@@ -738,7 +738,7 @@ python -c "from src.supervisor import Supervisor; ..."
 
 ### Entrada
 ```
-- Grid 30×30 con start en (5,5), door en (25,10)
+- Grid 64×64 con start en (5,5), door en (25,10)
 - Paredes en posiciones varias
 - Key inicial: (shape=square, color=red, rot=0)
 - Door requisito: (shape=square, color=red, rot=0)
