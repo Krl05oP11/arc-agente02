@@ -247,7 +247,7 @@
 | 2 | 2.2 | ✅ | - | A* Básico |
 | 2 | 2.3 | ✅ | - | Pattern DB |
 | 2 | 2.4 | ✅ | - | Restricciones |
-| 3 | 3.1 | ⬜ | - | Renderizador |
+| 3 | 3.1 | ✅ | - | Renderizador |
 | 3 | 3.2 | ⬜ | - | Supervisor |
 | 3 | 3.3 | ⬜ | - | Multi-vida |
 | 4 | 4.1 | ⬜ | - | Multi-rotators |
