@@ -400,16 +400,32 @@ def api_step():
 
                         # Determine movement
                         action = None
+                        new_row, new_col = player_row, player_col
+
                         if abs(dr) > abs(dc):
                             action = "Down" if dr > 0 else "Up"
+                            new_row = player_row + (1 if dr > 0 else -1)
                         else:
                             action = "Right" if dc > 0 else "Left"
+                            new_col = player_col + (1 if dc > 0 else -1)
 
-                        game_state["history"].append(f"[{game_state['step_count']}] 🔍 Move {action} (exploring...)")
-                        game_state["status"] = f"Exploring... {action}"
+                        # Check if new position is valid (not a wall)
+                        if 0 <= new_row < 64 and 0 <= new_col < 64:
+                            if grid[new_row, new_col] not in [4, 5]:  # Not a wall
+                                # Move player in grid
+                                grid[player_row, player_col] = 3  # Replace player with floor
+                                grid[new_row, new_col] = 12  # Place player at new position
+                                game_state["game_grid"] = grid
 
-                    # Keep the real grid (don't rotate it)
-                    # In real gameplay, we would update based on action execution
+                                game_state["history"].append(f"[{game_state['step_count']}] ✅ {action} ({new_row},{new_col})")
+                                game_state["status"] = f"Moved {action}"
+                            else:
+                                # Hit a wall, try different direction
+                                game_state["history"].append(f"[{game_state['step_count']}] 🧱 Wall! Cannot {action}")
+                                game_state["status"] = "Blocked by wall"
+                        else:
+                            game_state["history"].append(f"[{game_state['step_count']}] ⚠️ Out of bounds")
+                            game_state["status"] = "Out of bounds"
                 else:
                     # No agent available
                     game_state["history"].append(f"[{game_state['step_count']}] ℹ️ Agent not available")
