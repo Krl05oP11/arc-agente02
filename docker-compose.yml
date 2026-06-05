@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  arc-agente02:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: arc-agente02-dev
+    volumes:
+      - .:/workspace
+      - /home/carlos/arc_env_files:/arc_env_files:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ARC_ENV_DIR=/arc_env_files/ls20
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    command: /bin/bash
