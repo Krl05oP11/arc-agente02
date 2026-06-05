@@ -22,7 +22,18 @@ try:
     HAS_ARC = True
 except ImportError:
     HAS_ARC = False
-    print("⚠️  arc-agi not installed. Install with: pip install arc-agi")
+    print("⚠️  arc-agi not installed. Baseline mode only.")
+
+# Try to import ARC-AGENTE02
+try:
+    from src.supervisor import create_supervisor
+    from src.types import Example, WorldState, Door, KeyState
+    HAS_AGENT = True
+    supervisor = create_supervisor(debug=False)
+except Exception as e:
+    HAS_AGENT = False
+    supervisor = None
+    print(f"⚠️  Agent not available: {e}")
 
 app = Flask(__name__)
 
@@ -35,6 +46,8 @@ game_state = {
     "step_count": 0,
     "game_grid": None,
     "history": [],
+    "using_agent": False,
+    "agent_ready": HAS_AGENT,
 }
 
 # Color map (value → RGB)
@@ -277,19 +290,59 @@ def api_frame():
 @app.route("/api/step", methods=["POST"])
 def api_step():
     with lock:
-        # Simulate a step
         if game_state.get("game_grid") is None:
             # Initialize with test grid
             game_state["game_grid"] = np.random.randint(0, 16, (64, 64))
+            game_state["using_agent"] = HAS_AGENT
         else:
-            # Simulate agent movement
-            game_state["step_count"] += 1
-            game_state["status"] = f"Step {game_state['step_count']}"
+            # Execute agent step
+            try:
+                if HAS_AGENT and supervisor:
+                    # Get current grid
+                    grid = game_state["game_grid"]
 
-            # Record action
-            actions = ["Move UP", "Move DOWN", "Move LEFT", "Move RIGHT", "Interact"]
-            action = actions[game_state["step_count"] % 5]
-            game_state["history"].append(f"[{game_state['step_count']}] {action}")
+                    # Create example for supervisor
+                    world = WorldState(
+                        player_pos=(32, 32),
+                        walls=set(),
+                        doors=[],
+                        rotators=[],
+                        refills=[],
+                        teleporters=[],
+                        key_state=KeyState(0, 0, 0),
+                        energy=42
+                    )
+
+                    example = Example(
+                        input_grid=grid,
+                        solution_path=[(32, 32)],
+                        world_state=world
+                    )
+
+                    # Run supervisor pipeline
+                    result = supervisor.run([example], grid, test_world=world)
+
+                    if result.success and result.plan:
+                        action_str = f"Plan: {len(result.plan.actions)} steps"
+                        game_state["history"].append(f"[{game_state['step_count']}] ✅ {action_str}")
+                    else:
+                        game_state["history"].append(f"[{game_state['step_count']}] ⚠️ No solution found")
+
+                    # Simulate movement by rotating grid
+                    game_state["game_grid"] = np.rot90(game_state["game_grid"])
+                else:
+                    # Fallback to random movement
+                    actions = ["Move UP", "Move DOWN", "Move LEFT", "Move RIGHT"]
+                    action = actions[game_state["step_count"] % 4]
+                    game_state["history"].append(f"[{game_state['step_count']}] {action}")
+                    game_state["game_grid"] = np.random.randint(0, 16, (64, 64))
+
+                game_state["step_count"] += 1
+                game_state["status"] = f"Step {game_state['step_count']}"
+
+            except Exception as e:
+                game_state["history"].append(f"[{game_state['step_count']}] ❌ Error: {str(e)[:40]}")
+                game_state["step_count"] += 1
 
         return jsonify({"ok": True})
 
