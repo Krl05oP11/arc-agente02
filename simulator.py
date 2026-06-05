@@ -69,6 +69,7 @@ game_state = {
     "current_level": 1,
     "step_count": 0,
     "game_grid": None,
+    "player_offset": (0, 0),  # Offset from original position
     "history": [],
     "using_agent": False,
     "agent_ready": HAS_AGENT,
@@ -265,8 +266,8 @@ setInterval(updateFrame, 500);
 </html>
 """
 
-def render_grid(grid_array):
-    """Render grid as PNG base64"""
+def render_grid(grid_array, player_offset=(0, 0)):
+    """Render grid as PNG base64, with player at offset position"""
     if grid_array is None:
         # Return blank image
         img = Image.new("RGB", (512, 512), color=(50, 50, 50))
@@ -275,11 +276,35 @@ def render_grid(grid_array):
         img = Image.new("RGB", (W * SCALE, H * SCALE))
         pixels = img.load()
 
+        # Find original player position
+        player_pos = None
+        for r in range(H):
+            for c in range(W):
+                if grid_array[r][c] == 12:
+                    player_pos = (r, c)
+                    break
+            if player_pos:
+                break
+
         for r in range(H):
             for c in range(W):
                 try:
                     val = int(grid_array[r][c])
-                    rgb = COLOR_MAP.get(val, (0, 0, 0))
+
+                    # If this is player cell, move it by offset
+                    if val == 12 and player_pos:
+                        dr, dc = player_offset
+                        new_r = player_pos[0] + dr
+                        new_c = player_pos[1] + dc
+
+                        # Only render player if at new position
+                        if (r, c) == (new_r, new_c):
+                            rgb = COLOR_MAP.get(12, (255, 133, 27))  # Orange
+                        else:
+                            # Render as floor instead of player
+                            rgb = COLOR_MAP.get(3, (102, 102, 102))
+                    else:
+                        rgb = COLOR_MAP.get(val, (0, 0, 0))
                 except:
                     rgb = (100, 100, 100)
 
@@ -300,7 +325,8 @@ def index():
 @app.route("/api/frame")
 def api_frame():
     with lock:
-        img_b64 = render_grid(game_state.get("game_grid"))
+        player_offset = game_state.get("player_offset", (0, 0))
+        img_b64 = render_grid(game_state.get("game_grid"), player_offset)
 
         return jsonify({
             "image": img_b64,
@@ -400,22 +426,24 @@ def api_step():
 
                         # Determine movement
                         action = None
-                        new_row, new_col = player_row, player_col
+                        offset_row, offset_col = game_state.get("player_offset", (0, 0))
+                        new_row = player_row + offset_row
+                        new_col = player_col + offset_col
 
                         if abs(dr) > abs(dc):
                             action = "Down" if dr > 0 else "Up"
-                            new_row = player_row + (1 if dr > 0 else -1)
+                            move_amount = 1 if dr > 0 else -1
+                            new_row += move_amount
                         else:
                             action = "Right" if dc > 0 else "Left"
-                            new_col = player_col + (1 if dc > 0 else -1)
+                            move_amount = 1 if dc > 0 else -1
+                            new_col += move_amount
 
                         # Check if new position is valid (not a wall)
                         if 0 <= new_row < 64 and 0 <= new_col < 64:
                             if grid[new_row, new_col] not in [4, 5]:  # Not a wall
-                                # Move player in grid
-                                grid[player_row, player_col] = 3  # Replace player with floor
-                                grid[new_row, new_col] = 12  # Place player at new position
-                                game_state["game_grid"] = grid
+                                # Update player offset (virtual movement)
+                                game_state["player_offset"] = (new_row - player_row, new_col - player_col)
 
                                 game_state["history"].append(f"[{game_state['step_count']}] ✅ {action} ({new_row},{new_col})")
                                 game_state["status"] = f"Moved {action}"
@@ -445,6 +473,7 @@ def api_step():
 def api_reset():
     with lock:
         game_state["step_count"] = 0
+        game_state["player_offset"] = (0, 0)  # Reset player position
         game_state["history"] = ["[0] Game Reset"]
 
         # Load real ARC Prize environment
