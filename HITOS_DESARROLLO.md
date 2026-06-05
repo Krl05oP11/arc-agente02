@@ -252,7 +252,7 @@
 | 3 | 3.3 | ✅ | - | Multi-vida |
 | 4 | 4.1 | ✅ | - | Multi-rotators |
 | 4 | 4.2 | ✅ | - | Teleporters |
-| 5 | 5.1 | ⬜ | - | Memory & Explor |
+| 5 | 5.1 | ✅ | - | Memory & Explor |
 | 5 | 5.2 | ⬜ | - | Replan |
 | 5 | 5.3 | ⬜ | - | LRTA* |
 | 6 | 6.1 | ⬜ | - | Tests |
