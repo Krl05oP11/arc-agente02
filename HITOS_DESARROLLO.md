@@ -250,7 +250,7 @@
 | 3 | 3.1 | ✅ | - | Renderizador |
 | 3 | 3.2 | ✅ | - | Supervisor |
 | 3 | 3.3 | ✅ | - | Multi-vida |
-| 4 | 4.1 | ⬜ | - | Multi-rotators |
+| 4 | 4.1 | ✅ | - | Multi-rotators |
 | 4 | 4.2 | ⬜ | - | Teleporters |
 | 5 | 5.1 | ⬜ | - | Memory & Explor |
 | 5 | 5.2 | ⬜ | - | Replan |
