@@ -257,7 +257,7 @@
 | 5 | 5.3 | ✅ | - | LRTA* |
 | 6 | 6.1 | ✅ | - | Tests |
 | 6 | 6.2 | ✅ | - | Benchmark |
-| 6 | 6.3 | ⬜ | - | Optimize |
+| 6 | 6.3 | ✅ | - | Optimize |
 
 **Leyenda:**
 - ⬜ = No iniciado
