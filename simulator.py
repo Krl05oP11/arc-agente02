@@ -28,11 +28,16 @@ except ImportError:
 try:
     from src.supervisor import create_supervisor
     from src.types import Example, WorldState, Door, KeyState
+    from src.arc_integration_bridge import ArcIntegrationBridge
+    from src.arc_grid_adapter import GridAdapter
+    from src.arc_plan_executor import PlanExecutor
     HAS_AGENT = True
     supervisor = create_supervisor(debug=False)
+    bridge = ArcIntegrationBridge(debug=False)
 except Exception as e:
     HAS_AGENT = False
     supervisor = None
+    bridge = None
     print(f"⚠️  Agent not available: {e}")
 
 app = Flask(__name__)
