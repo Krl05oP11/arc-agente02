@@ -254,7 +254,7 @@
 | 4 | 4.2 | ✅ | - | Teleporters |
 | 5 | 5.1 | ✅ | - | Memory & Explor |
 | 5 | 5.2 | ✅ | - | Replan |
-| 5 | 5.3 | ⬜ | - | LRTA* |
+| 5 | 5.3 | ✅ | - | LRTA* |
 | 6 | 6.1 | ⬜ | - | Tests |
 | 6 | 6.2 | ⬜ | - | Benchmark |
 | 6 | 6.3 | ⬜ | - | Optimize |
