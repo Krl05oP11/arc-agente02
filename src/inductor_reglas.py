@@ -10,6 +10,9 @@ from typing import List, Optional, Set, Dict, Tuple, Any
 import logging
 from enum import Enum
 
+# Type alias for validation results
+ValidationResult = Tuple[bool, Optional[str]]
+
 logger = logging.getLogger(__name__)
 
 
@@ -191,7 +194,7 @@ class InductorReglas:
 
         return visited_rotators
 
-    def validate_rule(self, rule: Rule, examples: List[Example]) -> bool:
+    def validate_rule(self, rule: Rule, examples: List[Example]) -> Tuple[bool, Optional[str]]:
         """
         Verificar que una regla es consistente con todos los ejemplos
 
@@ -202,46 +205,123 @@ class InductorReglas:
             examples: Ejemplos de entrenamiento
 
         Returns:
-            True si la regla es consistente, False en caso contrario
+            Tupla (is_valid, error_message)
+            - is_valid: True si la regla es consistente
+            - error_message: Descripción del error (None si es válido)
         """
-        if not rule or not examples:
-            return False
+        if not rule:
+            return False, "Rule is None"
 
-        for example in examples:
-            if not self._path_satisfies_rule(example.solution_path, rule, example.world_state):
+        if not examples:
+            return False, "No examples provided"
+
+        for i, example in enumerate(examples):
+            is_valid, msg = self._path_satisfies_rule(
+                example.solution_path, rule, example.world_state
+            )
+            if not is_valid:
                 if self.debug:
-                    logger.warning(f"Rule failed for example")
-                return False
+                    logger.warning(f"Rule failed for example {i}: {msg}")
+                return False, f"Example {i}: {msg}"
 
         if self.debug:
             logger.debug(f"✓ Rule validated on {len(examples)} examples")
-        return True
+        return True, None
 
     def _path_satisfies_rule(self, path: List[Tuple[int, int]],
-                             rule: Rule, world: Optional[WorldState]) -> bool:
-        """Verificar si un camino satisface una regla"""
-        if not world:
-            return False
+                             rule: Rule, world: Optional[WorldState]) -> Tuple[bool, Optional[str]]:
+        """
+        Verificar si un camino satisface una regla
 
-        # Extraer rotadores visitados en este camino
+        Returns:
+            Tupla (is_valid, error_message)
+        """
+        if not world:
+            return False, "World state is None"
+
+        if not path:
+            return False, "Path is empty"
+
+        # Extraer rotadores visitados en este camino, preservando orden
         rotators_by_pos = {rot.position: rot.rotator_id for rot in world.rotators}
-        visited = []
+        visited_rotators = []
         for pos in path:
             if pos in rotators_by_pos:
                 rot_id = rotators_by_pos[pos]
-                if rot_id not in visited:
-                    visited.append(rot_id)
+                if rot_id not in visited_rotators:
+                    visited_rotators.append(rot_id)
 
-        # Verificar restricciones
+        # Verificar restricciones de la regla
         for constraint in rule.constraint_list:
-            if "before" in constraint:
-                # Parse constraint: "visit(X) before visit(Y)"
-                # Por simplicidad, solo verificar orden básico
-                parts = constraint.split(" before ")
-                # TODO: Implementar parser más robusto
-                pass
+            is_satisfied, msg = self._check_constraint(
+                constraint, visited_rotators
+            )
+            if not is_satisfied:
+                return False, f"Constraint failed: {msg}"
 
-        return True
+        return True, None
+
+    def _check_constraint(self, constraint: str, visited_rotators: List[int]) -> Tuple[bool, Optional[str]]:
+        """
+        Verificar si una restricción CSP es satisfecha
+
+        Soporta restricciones del tipo:
+        - "visit(X) before visit(Y)" → X debe visitarse antes que Y
+        - "visit(X) before door" → X debe visitarse antes de la puerta
+
+        Args:
+            constraint: Descripción de la restricción
+            visited_rotators: Orden en que fueron visitados los rotadores
+
+        Returns:
+            Tupla (is_satisfied, error_message)
+        """
+        if "before" not in constraint:
+            return True, None
+
+        # Parse: "visit(X) before visit(Y)"
+        parts = constraint.split(" before ")
+        if len(parts) != 2:
+            return True, None  # Ignorar restricciones malformadas
+
+        before_part = parts[0].strip()  # "visit(X)"
+        after_part = parts[1].strip()   # "visit(Y)" or "door"
+
+        # Extraer IDs de las restricciones
+        try:
+            if "visit(" in before_part:
+                before_id_str = before_part.replace("visit(", "").replace(")", "").strip()
+                before_id = int(before_id_str)
+            else:
+                return True, None
+
+            if "door" in after_part:
+                # No hay restricción de rotador antes que puerta en este contexto
+                return True, None
+
+            if "visit(" in after_part:
+                after_id_str = after_part.replace("visit(", "").replace(")", "").strip()
+                after_id = int(after_id_str)
+            else:
+                return True, None
+        except (ValueError, IndexError):
+            # Si no se puede parsear, ignorar
+            return True, None
+
+        # Verificar que before_id aparece antes que after_id
+        if before_id not in visited_rotators:
+            return False, f"Rotator {before_id} not visited"
+
+        if after_id not in visited_rotators:
+            return False, f"Rotator {after_id} not visited"
+
+        before_idx = visited_rotators.index(before_id)
+        after_idx = visited_rotators.index(after_id)
+
+        if before_idx >= after_idx:
+            return False, f"Rotator {before_id} must be visited before {after_id}"
+
+        return True, None
 
     # Métodos auxiliares
 
