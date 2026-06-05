@@ -8,6 +8,7 @@ Este grafo es la base para A* pathfinding en Fase 2.
 """
 
 from src.types import State, WorldState
+from src.pattern_database import get_pattern_database
 from typing import List, Tuple, Optional, Dict, Set
 import logging
 
@@ -200,14 +201,17 @@ class StateGraph:
 
         Combina:
         1. Manhattan distance a la puerta más cercana
-        2. Costo estimado para transformar la llave al estado requerido
+        2. Costo estimado para transformar la llave (usando Pattern Database)
+
+        Pattern Database mejora significativamente la búsqueda al proporcionar
+        una estimación más precisa del costo de transformación de llave.
 
         Args:
             state: Estado actual
             goal_key: (shape_id, color_id, rotation_id) requerido
 
         Returns:
-            Estimación de costo restante
+            Estimación de costo restante (admisible)
         """
         # Encontrar puerta más cercana
         min_dist = float('inf')
@@ -219,15 +223,10 @@ class StateGraph:
         # Normalizar a pasos de 5 celdas
         manhattan_cost = max(1, min_dist // 5)
 
-        # Costo estimado para key transformation
-        # Simplificación: asumir que necesitamos 1 step por dimensión diferente
-        key_cost = 0
-        if state.key_shape != goal_key[0]:
-            key_cost += 1
-        if state.key_color != goal_key[1]:
-            key_cost += 1
-        if state.key_rotation != goal_key[2]:
-            key_cost += 1
+        # Costo estimado para key transformation usando Pattern Database
+        current_key = (state.key_shape, state.key_color, state.key_rotation)
+        db = get_pattern_database(debug=False)
+        key_cost = db.lookup(current_key, goal_key)
 
         return manhattan_cost + key_cost
 
